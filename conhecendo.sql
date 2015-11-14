@@ -21,12 +21,12 @@ where filename_sys not like '/home/storage/9/33/21%'
 
 /* conteudo com categoria */
 /* see http://stackoverflow.com/questions/11887160/how-to-detect-unpublished-content-in-joomla-db */
-SELECT c.id, c.title, c.alias, a.name, a.title, a.introtext description, a.fulltext text, a.catid,
-  a.created, a.created_by, a.modified, a.hits,
-  p.name, p.title FROM j25_content c, j25_assets a, j25_assets p
+SELECT c.id, c.title, c.alias, c.introtext description, c.fulltext text,
+  c.created creation_date, c.created_by user_id, c.modified modification_date, c.hits,
+  a.parent_id folder_id
+FROM j25_content c, j25_assets a
 where c.asset_id = a.id
-and a.parent_id = p.id
-and state <> -2 -- exclude marked for deletion
+and c.state <> -2 -- exclude marked for deletion
 
 /* ASSETS: hierarquia
  vide:

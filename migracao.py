@@ -11,6 +11,11 @@ import transaction
 # > setSite(portal)  # noqa
 
 
+def decode(entry, *keys):
+    for key in keys:
+        entry[key] = entry[key].decode('latin-1')
+
+
 def query(sql):
     con = mdb.connect('localhost', 'root', 'admin', 'rosa',
                       cursorclass=mdb.cursors.DictCursor)
@@ -65,7 +70,18 @@ def create_article(folder, title, text, date, creator):
 
 
 def migrate_articles(portal, users, folders):
-    pass
+    rows = query('''
+    SELECT c.id, c.title, c.alias, c.introtext description, c.fulltext text,
+        c.created creation_date, c.modified modification_date,
+        c.created_by user_id, a.parent_id folder_id,
+        c.hits
+        FROM j25_content c, j25_assets a
+        where c.asset_id = a.id
+        and c.state <> -2 -- exclude marked for deletion
+        ''')
+    for row in rows:
+        decode(row, 'title')
+        print(row['title'])
 
 
 def migrate(portal):
