@@ -8,6 +8,7 @@ from MySQLdb.cursors import DictCursor
 import transaction
 from bunch import Bunch
 from datetime import datetime
+import lxml.html
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
@@ -86,7 +87,14 @@ def migrate_articles(portal, users, folders):
         and c.state <> -2 -- exclude marked for deletion
         ''')
     for row in rows:
-        print(row.title)
+        # move description to empty text
+        if row.description and not row.text:
+            row.text, row.description = row.description, ''
+        # description should be pure text
+        if row.description:
+            html_desc = lxml.html.document_fromstring(row.description)
+            row.description = html_desc.text_content()
+
     return rows
 
 
