@@ -3,8 +3,10 @@ from plone import api
 from zope.component.hooks import setSite  # noqa
 from DateTime import DateTime  # noqa
 from plone.app.textfield.value import RichTextValue
-import MySQLdb as mdb
+from MySQLdb import connect
+from MySQLdb.cursors import DictCursor
 import transaction
+from bunch import Bunch
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
@@ -17,26 +19,27 @@ def decode(entry, *keys):
 
 
 def query(sql):
-    con = mdb.connect('localhost', 'root', 'admin', 'rosa',
-                      cursorclass=mdb.cursors.DictCursor)
+    con = connect('localhost', 'root', 'admin', 'rosa',
+                  cursorclass=DictCursor)
     with con:
         cur = con.cursor()
         cur.execute(sql)
         rows = cur.fetchall()
-        return rows
+        return [Bunch(r) for r in rows]
 
 
 def migrate_users(exclude):
     print('Migrating users...')
     rows = query('select id, name, username, email from j25_users')
-    rows = [row for row in rows if row['username'] not in exclude]
+    rows = [row for row in rows if row.username not in exclude]
     users = {}
     for row in rows:
-        properties = {'fullname': row['fullname'].decode('latin-1')}
-        user = api.user.create(username=row['username'],
-                               email=row['email'],
+        decode(row, 'fullname')
+        properties = {'fullname': row.fullname}
+        user = api.user.create(username=row.username,
+                               email=row.email,
                                properties=properties)
-        users[row['id']] = user
+        users[row.id] = user
     transaction.commit()
     print('%s users migrated' % len(rows))
     return users
@@ -48,11 +51,11 @@ def migrate_folders(portal):
                  and parent_id = 35''')
     folders = {}
     for row in rows:
-        title = row['title'].decode('latin-1')
-        print('Creating folder %s' % title)
+        decode(row, 'title')
+        print('Creating folder %s' % row.title)
         folder = api.content.create(
-            type='Folder', title=row['title'], container=portal)
-        folders[row['id']] = folder
+            type='Folder', title=row.title, container=portal)
+        folders[row.id] = folder
         api.content.transition(obj=folder, transition='publish')
     transaction.commit()
     return folders
@@ -81,7 +84,8 @@ def migrate_articles(portal, users, folders):
         ''')
     for row in rows:
         decode(row, 'title')
-        print(row['title'])
+        print(row.title)
+    return rows
 
 
 def migrate(portal):
