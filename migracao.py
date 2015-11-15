@@ -34,16 +34,18 @@ def query(sql):
         return [Bunch(convert_types(r)) for r in rows]
 
 
-def migrate_users(exclude):
+def migrate_users(exclude=[]):
     print('Migrating users...')
     rows = query('select id, name, username, email from j25_users')
     rows = [row for row in rows if row.username not in exclude]
     users = {}
     for row in rows:
-        properties = {'fullname': row.fullname}
+        properties = {'fullname': row.name}
         user = api.user.create(username=row.username,
                                email=row.email,
                                properties=properties)
+        api.user.grant_roles(user=user,
+                             roles=['Contributor'],)
         users[row.id] = user
     transaction.commit()
     print('%s users migrated' % len(rows))
@@ -65,15 +67,26 @@ def migrate_folders(portal):
     return folders
 
 
-def create_article(folder, title, text, date, creator):
-    with api.env.adopt_user(username=creator):
-        text = RichTextValue(text, 'text/html', 'text/html')
-        instance = api.content.create(
-            type='Document', title='A', text=text, container=folder)
-        # creation date
-        instance.creation_date = date
-        instance.setModificationDate(date)
-        instance.reindexObject(idxs=['created', 'modified'])
+def create_article(row):
+    with api.env.adopt_user(user=row.user):
+        obj = api.content.create(
+            type='Document',
+            container=row.folder,
+            title=row.title,
+            description=row.description,
+            text=RichTextValue(row.text, 'text/html', 'text/html'),
+            hits=row.hits,
+        )
+        # adjust dates
+        obj.creation_date = row.creation_date
+        obj.setModificationDate(row.modification_date)
+        obj.reindexObject(idxs=['created', 'modified'])
+
+        # move to original url and back
+        # this leaves a redirect to the original url as a side effect
+        # id = obj.id
+        api.content.rename(obj, new_id='%d-%s' % (row.id, str(row.alias)))
+        # api.content.rename(obj, new_id=id)
 
 
 def migrate_articles(portal, users, folders):
@@ -86,7 +99,7 @@ def migrate_articles(portal, users, folders):
         where c.asset_id = a.id
         and c.state <> -2 -- exclude marked for deletion
         ''')
-    for row in rows:
+    for row in rows[:1]:
         # move description to empty text
         if row.description and not row.text:
             row.text, row.description = row.description, ''
@@ -94,15 +107,27 @@ def migrate_articles(portal, users, folders):
         if row.description:
             html_desc = lxml.html.document_fromstring(row.description)
             row.description = html_desc.text_content()
-
+        row.user = users[row.user_id]
+        row.folder = folders[row.folder_id]
+        create_article(row)
     return rows
+
+
+def clean():
+    for user in api.user.get_users():
+        api.user.delete(user=user)
+    for portal_type in ['Document', 'Folder']:
+        for brain in api.content.find(portal_type=portal_type):
+            api.content.delete(obj=brain.getObject())
+    transaction.commit()
 
 
 def migrate(portal):
     setSite(portal)
-    users = migrate_users(exclude=['mliell', 'rosa', 'teste'])
-
+    clean()
+    users = migrate_users(['rosa'])
     folders = migrate_folders(portal)
     api.content.rename(folders[27], new_id='artigos-publicados')
+    articles = migrate_articles(portal, users, folders)
     transaction.commit()
-    migrate_articles(portal, users, folders)
+    return users, folders, articles
