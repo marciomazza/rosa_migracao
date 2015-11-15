@@ -45,7 +45,7 @@ def migrate_users(exclude=[]):
                                email=str(row.email),
                                properties=properties)
         api.user.grant_roles(user=user,
-                             roles=['Contributor'],)
+                             roles=['Contributor', 'Editor', 'Reviewer'],)
         users[row.id] = user
     transaction.commit()
     print('%s users migrated' % len(rows))
@@ -56,18 +56,17 @@ def migrate_folders(portal):
     rows = query('''SELECT id, title from j25_assets
                  where name like 'com_content.category.%'
                  and parent_id = 35''')
+    rows.append(Bunch(id=1, title='Perdidos'))  # for articles in root
     folders = {}
     for row in rows:
         print('Creating folder %s' % row.title)
         folder = api.content.create(
             type='Folder', title=row.title, container=portal)
         folders[row.id] = folder
-        api.content.transition(obj=folder, transition='publish')
+        api.content.transition(folder, transition='publish')
     transaction.commit()
     # consider "Root Asset" and "Site" to be root
-    soltos = api.content.create(
-        type='Folder', title='Soltos', container=portal)
-    folders[1] = folders[35] = soltos
+    folders[35] = folders[1]
     return folders
 
 
@@ -92,18 +91,22 @@ def create_article(row):
         api.content.rename(obj, new_id='%d-%s' % (row.id, str(row.alias)))
         # api.content.rename(obj, new_id=id)
 
+        # workflow state
+        if row.state == 1:
+            api.content.transition(obj, transition='publish')
+
 
 def migrate_articles(portal, users, folders):
     rows = query('''
     SELECT c.id, c.title, c.alias, c.introtext description, c.fulltext text,
-        c.created creation_date, c.modified modification_date,
+        c.created creation_date, c.modified modification_date, c.state,
         c.created_by user_id, a.parent_id folder_id,
         c.hits
         FROM j25_content c, j25_assets a
         where c.asset_id = a.id
         and c.state <> -2 -- exclude marked for deletion
         ''')
-    for row in rows:
+    for count, row in enumerate(rows):
         # move description to empty text
         if row.description and not row.text:
             row.text, row.description = row.description, ''
@@ -116,6 +119,10 @@ def migrate_articles(portal, users, folders):
         print('Creating article [%s, %s] %s' % (
             row.id, row.alias, row.title))
         create_article(row)
+        # commit every 10 items
+        if not count % 10:
+            transaction.commit()
+    transaction.commit()
     return rows
 
 
