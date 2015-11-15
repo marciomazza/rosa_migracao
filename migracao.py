@@ -7,15 +7,20 @@ from MySQLdb import connect
 from MySQLdb.cursors import DictCursor
 import transaction
 from bunch import Bunch
+from datetime import datetime
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
 # > setSite(portal)  # noqa
 
 
-def decode(entry, *keys):
-    for key in keys:
-        entry[key] = entry[key].decode('latin-1')
+def convert_types(row):
+    for key, value in row.iteritems():
+        if type(value) == str:
+            row[key] = value.decode('latin-1')
+        elif type(value) == datetime:
+            row[key] = DateTime(value)
+    return row
 
 
 def query(sql):
@@ -25,7 +30,7 @@ def query(sql):
         cur = con.cursor()
         cur.execute(sql)
         rows = cur.fetchall()
-        return [Bunch(r) for r in rows]
+        return [Bunch(convert_types(r)) for r in rows]
 
 
 def migrate_users(exclude):
@@ -34,7 +39,6 @@ def migrate_users(exclude):
     rows = [row for row in rows if row.username not in exclude]
     users = {}
     for row in rows:
-        decode(row, 'fullname')
         properties = {'fullname': row.fullname}
         user = api.user.create(username=row.username,
                                email=row.email,
@@ -51,7 +55,6 @@ def migrate_folders(portal):
                  and parent_id = 35''')
     folders = {}
     for row in rows:
-        decode(row, 'title')
         print('Creating folder %s' % row.title)
         folder = api.content.create(
             type='Folder', title=row.title, container=portal)
@@ -83,7 +86,6 @@ def migrate_articles(portal, users, folders):
         and c.state <> -2 -- exclude marked for deletion
         ''')
     for row in rows:
-        decode(row, 'title')
         print(row.title)
     return rows
 
