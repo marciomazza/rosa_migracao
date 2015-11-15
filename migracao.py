@@ -41,8 +41,8 @@ def migrate_users(exclude=[]):
     users = {}
     for row in rows:
         properties = {'fullname': row.name}
-        user = api.user.create(username=row.username,
-                               email=row.email,
+        user = api.user.create(username=str(row.username),
+                               email=str(row.email),
                                properties=properties)
         api.user.grant_roles(user=user,
                              roles=['Contributor'],)
@@ -64,6 +64,10 @@ def migrate_folders(portal):
         folders[row.id] = folder
         api.content.transition(obj=folder, transition='publish')
     transaction.commit()
+    # consider "Root Asset" and "Site" to be root
+    soltos = api.content.create(
+        type='Folder', title='Soltos', container=portal)
+    folders[1] = folders[35] = soltos
     return folders
 
 
@@ -99,16 +103,18 @@ def migrate_articles(portal, users, folders):
         where c.asset_id = a.id
         and c.state <> -2 -- exclude marked for deletion
         ''')
-    for row in rows[:1]:
+    for row in rows:
         # move description to empty text
         if row.description and not row.text:
             row.text, row.description = row.description, ''
         # description should be pure text
         if row.description:
             html_desc = lxml.html.document_fromstring(row.description)
-            row.description = html_desc.text_content()
+            row.description = unicode(html_desc.text_content())
         row.user = users[row.user_id]
         row.folder = folders[row.folder_id]
+        print('Creating article [%s, %s] %s' % (
+            row.id, row.alias, row.title))
         create_article(row)
     return rows
 
@@ -118,7 +124,8 @@ def clean():
         api.user.delete(user=user)
     for portal_type in ['Document', 'Folder']:
         for brain in api.content.find(portal_type=portal_type):
-            api.content.delete(obj=brain.getObject())
+            api.content.delete(obj=brain.getObject(),
+                               check_linkintegrity=False)
     transaction.commit()
 
 
@@ -128,6 +135,7 @@ def migrate(portal):
     users = migrate_users(['rosa'])
     folders = migrate_folders(portal)
     api.content.rename(folders[27], new_id='artigos-publicados')
+    transaction.commit()
     articles = migrate_articles(portal, users, folders)
     transaction.commit()
     return users, folders, articles
