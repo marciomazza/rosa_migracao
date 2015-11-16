@@ -9,6 +9,7 @@ import transaction
 from bunch import Bunch
 from datetime import datetime
 import lxml.html
+import lxml.html.clean
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
@@ -70,6 +71,13 @@ def migrate_folders(portal):
     return folders
 
 
+def clean_html(text):
+    html = lxml.html.clean.clean_html(text)
+    if html.startswith('<div>') and html.endswith('</div>'):
+        html = html[len('<div>'):-len('</div>')]
+    return html
+
+
 def create_article(row):
     with api.env.adopt_user(user=row.user):
         obj = api.content.create(
@@ -77,7 +85,8 @@ def create_article(row):
             container=row.folder,
             title=row.title,
             description=row.description,
-            text=RichTextValue(row.text, 'text/html', 'text/html'),
+            text=RichTextValue(clean_html(row.text),
+                               'text/html', 'text/html'),
             hits=row.hits,
         )
         # adjust dates
