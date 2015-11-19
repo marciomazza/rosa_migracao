@@ -10,6 +10,10 @@ from bunch import Bunch
 from datetime import datetime
 import lxml.html
 import lxml.html.clean
+from os.path import relpath
+from plone.namedfile.file import NamedBlobImage
+import imghdr
+import os.path
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
@@ -155,3 +159,37 @@ def migrate(portal):
     articles = migrate_articles(portal, users, folders)
     transaction.commit()
     return users, folders, articles
+
+
+def create_file(dir, filename, container):
+    if filename in ['index.html', '.listing']:
+        return
+    path = os.path.join(dir, filename)
+    with open(path, 'r') as f:
+        data = f.read()
+    if imghdr.what(path):
+        # it's an image
+        file = api.content.create(
+            type='Image',
+            # id=filename,
+            title=filename,
+            container=container,
+            image=NamedBlobImage(data=data,
+                                 filename=filename.decode('utf-8')))
+    else:
+        print('NOT AN IMAGE: %s' % path)
+    return file
+
+
+def migrate_files(portal, root):
+    setSite(portal)
+    for dir, subdirs, filenames in os.walk(root):
+        path = relpath(dir, root)
+        if path == '.':
+            container = portal
+        else:
+            container = portal.unrestrictedTraverse(path)
+        for sub in subdirs:
+            api.content.create(type='Folder', title=sub, container=container)
+        for filename in filenames:
+            create_file(dir, filename, container)
