@@ -17,6 +17,7 @@ import os.path
 from bs4 import BeautifulSoup
 import requests
 from requests.exceptions import ConnectionError
+import urllib
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
@@ -228,21 +229,35 @@ def extract_first_image_as_lead_image(page):
         soup.html.unwrap()
         soup.body.unwrap()
         img = soup.img.extract()
-        # download image data
+
+        # set text without the extracted first image
+        page.text = RichTextValue(soup.text, 'text/html', 'text/html')
+
+        # set image, if we can find it
         src = img.attrs['src']
         print('Extracting lead image for %s (from %s)' % (page, src))
         if src.startswith('images/'):
-            path = os.path.join(FTP_DIR, src)
-            assert imghdr.what(path)
-            with open(path, 'r') as f:
-                data = f.read()
+            path = os.path.join(FTP_DIR, urllib.unquote(src))
+            if not os.path.exists(path):
+                print('@@@@@@@@@@@@@@@@@@@ NAO ACHADA: %s' % path)
+                data = None
+            else:
+                if not imghdr.what(path):
+                    print('@@@@@@@@@@@@@@@@@@@ NAO PARECE SER IMAGEM %s' % path)
+                with open(path, 'r') as f:
+                    data = f.read()
+        elif not src.strip():
+            import ipdb; ipdb.set_trace()
+            # simply remove empty img
+            data = None
         else:
             try:
                 res = requests.get(src, stream=True)
                 data = res.raw.read()
             except ConnectionError:
                 print('########  ConnectionError: %s' % src)
+                transaction.abort()
                 return
-        page.image = NamedBlobImage(data=data)
-        page.text = RichTextValue(soup.text, 'text/html', 'text/html')
+        if data:
+            page.image = NamedBlobImage(data=data)
         transaction.commit()
