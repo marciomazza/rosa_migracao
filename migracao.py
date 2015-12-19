@@ -14,6 +14,9 @@ from os.path import relpath
 from plone.namedfile.file import NamedBlobImage
 import imghdr
 import os.path
+from bs4 import BeautifulSoup
+import requests
+from requests.exceptions import ConnectionError
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
@@ -193,3 +196,35 @@ def migrate_files(portal, root):
             api.content.create(type='Folder', title=sub, container=container)
         for filename in filenames:
             create_file(dir, filename, container)
+
+
+FTP_DIR = '/home/mazza/seva/rosa/ftp/public_html'
+
+
+def extract_first_image_as_lead_image(page):
+    # assumes page has lead image behaviour
+    if getattr(page, 'image', None):
+        return
+    soup = BeautifulSoup(page.text.raw, 'lxml')
+    if soup.img:
+        soup.html.unwrap()
+        soup.body.unwrap()
+        img = soup.img.extract()
+        # download image data
+        src = img.attrs['src']
+        print('Extracting lead image for %s (from %s)' % (page, src))
+        if src.startswith('images/'):
+            path = os.path.join(FTP_DIR, src)
+            assert imghdr.what(path)
+            with open(path, 'r') as f:
+                data = f.read()
+        else:
+            try:
+                res = requests.get(src, stream=True)
+                data = res.raw.read()
+            except ConnectionError:
+                print('########  ConnectionError: %s' % src)
+                return
+        page.image = NamedBlobImage(data=data)
+        page.text = RichTextValue(soup.text, 'text/html', 'text/html')
+        transaction.commit()
