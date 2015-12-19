@@ -78,6 +78,12 @@ def migrate_folders(portal):
     return folders
 
 
+# patch lxml html cleaner to preserve img src data
+import lxml.html.clean
+lxml.html.clean._is_javascript_scheme = re.compile(
+    r'(?:javascript|jscript|livescript|vbscript|about|mocha):',
+    re.I).search
+
 def clean_html(text):
     html = lxml.html.clean.clean_html(text)
     if html.startswith('<div>') and html.endswith('</div>'):
