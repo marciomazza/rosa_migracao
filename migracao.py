@@ -172,6 +172,7 @@ def create_file(dir, filename, container):
         data = f.read()
     if imghdr.what(path):
         # it's an image
+        print('Creating image %s' % path)
         file = api.content.create(
             type='Image',
             # id=filename,
@@ -179,23 +180,34 @@ def create_file(dir, filename, container):
             container=container,
             image=NamedBlobImage(data=data,
                                  filename=filename.decode('utf-8')))
+        return file
     else:
         print('NOT AN IMAGE: %s' % path)
-    return file
 
 
 def migrate_files(portal, root):
-    setSite(portal)
+    folder_name = os.path.basename(root)
+    if folder_name not in portal:
+        api.content.create(type='Folder', title=folder_name, container=portal)
+    base_folder = portal[folder_name]
+
+    ids = {}
     for dir, subdirs, filenames in os.walk(root):
         path = relpath(dir, root)
+        # translate to normalized plone path
+        for name, id in ids.items():
+            path = path.replace(name, id)
         if path == '.':
-            container = portal
+            container = base_folder
         else:
-            container = portal.unrestrictedTraverse(path)
+            container = base_folder.unrestrictedTraverse(path)
         for sub in subdirs:
-            api.content.create(type='Folder', title=sub, container=container)
+            print('Creating folder %s : %s' % (container, sub))
+            folder = api.content.create(type='Folder', title=sub, container=container)
+            ids[sub] = folder.id
         for filename in filenames:
             create_file(dir, filename, container)
+    transaction.commit()
 
 
 FTP_DIR = '/home/mazza/seva/rosa/ftp/public_html'
