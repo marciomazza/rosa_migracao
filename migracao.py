@@ -30,7 +30,7 @@ def convert_types(row):
 
 
 def query(sql):
-    con = connect('localhost', 'root', 'admin', 'rosa',
+    con = connect(host='localhost', user='root', db='rosa',
                   cursorclass=DictCursor)
     with con:
         cur = con.cursor()
