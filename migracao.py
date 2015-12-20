@@ -18,6 +18,8 @@ from bs4 import BeautifulSoup
 import requests
 from requests.exceptions import ConnectionError
 import urllib
+import base64
+import zlib
 
 # requires MySQL-python
 # run this on ipzope shell before using plone.api
@@ -81,6 +83,7 @@ def migrate_folders(portal):
 
 # patch lxml html cleaner to preserve img src data
 import lxml.html.clean
+import re
 lxml.html.clean._is_javascript_scheme = re.compile(
     r'(?:javascript|jscript|livescript|vbscript|about|mocha):',
     re.I).search
@@ -217,6 +220,14 @@ def migrate_files(portal, root):
     transaction.commit()
 
 
+BASE64_MARK = 'base64,'
+
+def base64_img_data_decode(src):
+    index = src.index(BASE64_MARK) + len(BASE64_MARK)
+    src = src[index:]
+    return base64.b64decode(src)
+
+
 FTP_DIR = '/home/mazza/seva/rosa/ftp/public_html'
 
 
@@ -235,7 +246,7 @@ def extract_first_image_as_lead_image(page):
 
         # set image, if we can find it
         src = img.attrs['src']
-        print('Extracting lead image for %s (from %s)' % (page, src))
+        print('Extracting lead image for %s (from %s)' % (page, src[:200]))
         if src.startswith('images/'):
             path = os.path.join(FTP_DIR, urllib.unquote(src))
             if not os.path.exists(path):
@@ -246,6 +257,8 @@ def extract_first_image_as_lead_image(page):
                     print('@@@@@@@@@@@@@@@@@@@ NAO PARECE SER IMAGEM %s' % path)
                 with open(path, 'r') as f:
                     data = f.read()
+        elif src.startswith('data:'):
+            data = base64_img_data_decode(src)
         elif not src.strip():
             import ipdb; ipdb.set_trace()
             # simply remove empty img
@@ -254,6 +267,14 @@ def extract_first_image_as_lead_image(page):
             try:
                 res = requests.get(src, stream=True)
                 data = res.raw.read()
+                if res.headers['Content-Encoding'] == 'gzip':
+                    # gzip decoding has failed at least with http://bit.ly/1S0DrHc
+                    # so try to decompress again
+                    try:
+                        data = zlib.decompress(data, 16+zlib.MAX_WBITS)
+                    except:
+                        pass
+
             except ConnectionError:
                 print('########  ConnectionError: %s' % src)
                 transaction.abort()
